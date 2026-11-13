@@ -1,0 +1,55 @@
+{
+    "pages": [
+        {
+            "path": "pages/index/index",
+            "style": {
+                "navigationBarTitleText": "云栖民宿"
+            }
+        },
+        {
+            "path": "pages/login/login",
+            "style": {
+                "navigationBarTitleText": "登录"
+            }
+        },
+        {
+            "path": "pages/admin/admin",
+            "style": {
+                "navigationBarTitleText": "管理后台"
+            }
+        },
+        {
+            "path": "pages/orders/list",
+            "style": {
+                "navigationBarTitleText": "我的订单",
+                "enablePullDownRefresh": true,
+                "onReachBottomDistance": 80
+            }
+        },
+        {
+            "path": "pages/order/detail",
+            "style": {
+                "navigationBarTitleText": "订单详情"
+            }
+        },
+        {
+            "path": "pages/notice/notice",
+            "style": {
+                "navigationBarTitleText": "入住须知"
+            }
+        },
+        {
+            "path": "pages/facility/facility",
+            "style": {
+                "navigationBarTitleText": "服务及设施"
+            }
+        }
+    ],
+    "globalStyle": {
+        "navigationBarTextStyle": "white",
+        "navigationBarTitleText": "云栖民宿",
+        "navigationBarBackgroundColor": "#5B3E2B",
+        "backgroundColor": "#F6F1E8",
+        "backgroundTextStyle": "dark"
+    }
+}

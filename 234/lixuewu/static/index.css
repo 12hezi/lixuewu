@@ -1,0 +1,12 @@
+/* H5 端全局兜底样式（App / 小程序不生效） */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f6f1e8;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}

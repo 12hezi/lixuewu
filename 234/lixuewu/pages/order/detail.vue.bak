@@ -1,0 +1,404 @@
+<template>
+  <view class="page">
+    <view class="status-card" v-if="order">
+      <text class="status-text">{{ order.statusText }}</text>
+      <text class="status-sub">{{ statusTip }}</text>
+    </view>
+
+    <view class="card" v-if="order">
+      <view class="row">
+        <text class="label">房型</text>
+        <text class="value strong">{{ order.roomTypeName }}</text>
+      </view>
+      <view class="row">
+        <text class="label">入住</text>
+        <text class="value">{{ order.checkIn }}（{{ weekday(order.checkIn) }}）</text>
+      </view>
+      <view class="row">
+        <text class="label">退房</text>
+        <text class="value">{{ order.checkOut }}（{{ weekday(order.checkOut) }}）</text>
+      </view>
+      <view class="row">
+        <text class="label">住宿</text>
+        <text class="value">{{ order.nights }} 晚</text>
+      </view>
+      <view class="row total">
+        <text class="label">订单金额</text>
+        <text class="value amount">￥{{ money(order.totalAmount) }}</text>
+      </view>
+    </view>
+
+    <view class="card" v-if="order">
+      <view class="row">
+        <text class="label">订单号</text>
+        <text class="value mono">{{ order.orderNo }}</text>
+      </view>
+      <view class="row">
+        <text class="label">下单时间</text>
+        <text class="value">{{ order.createTime || '—' }}</text>
+      </view>
+      <view class="row">
+        <text class="label">支付时间</text>
+        <text class="value">{{ order.payTime || '—' }}</text>
+      </view>
+      <view class="row">
+        <text class="label">取消时间</text>
+        <text class="value">{{ order.cancelTime || '—' }}</text>
+      </view>
+    </view>
+
+    <!-- 阶段四/五：已支付/已入住/已离店订单评价 -->
+    <view class="card review-card" v-if="order && (order.orderStatus === 1 || order.orderStatus === 4 || order.orderStatus === 5)">
+      <view class="review-head">
+        <text class="review-title">{{ order.reviewed ? '我的评价' : '评价本单' }}</text>
+        <text class="review-sub" v-if="order.reviewed">一单一评 · 已发布</text>
+        <text class="review-sub" v-else>入住体验如何？评分将展示在房型评价区</text>
+      </view>
+
+      <view v-if="!order.reviewed">
+        <view class="stars">
+          <text v-for="i in 5" :key="i" class="star" :class="{ on: i <= reviewScore }" @tap="reviewScore = i">{{ i <= reviewScore ? '★' : '☆' }}</text>
+        </view>
+        <textarea class="review-input" v-model="reviewContent" maxlength="500" placeholder="说说这次入住体验（最多 500 字）" placeholder-class="ph"></textarea>
+        <button class="btn submit" :loading="submitting" :disabled="submitting" @tap="submitReview">发布评价</button>
+      </view>
+
+      <view v-else>
+        <view class="stars">
+          <text v-for="i in 5" :key="i" class="star" :class="{ on: i <= (myReview.score || 0) }">{{ i <= (myReview.score || 0) ? '★' : '☆' }}</text>
+        </view>
+        <view class="my-review" v-if="myReview && myReview.content">
+          <text>{{ myReview.content }}</text>
+          <text class="review-time">{{ myReview.createTime }}</text>
+        </view>
+        <view class="my-review empty-tip" v-else><text>已评价（未填写文字内容）</text></view>
+      </view>
+    </view>
+
+    <view class="loading" v-if="loading">订单加载中...</view>
+    <view class="loading" v-if="!loading && !order">订单不存在或已删除</view>
+
+    <view class="footer" v-if="order && order.orderStatus === 0">
+      <button class="btn ghost" @tap="cancelOrder">取消订单</button>
+      <button class="btn primary" :loading="paying" :disabled="paying" @tap="payOrder">立即支付 ￥{{ money(order.totalAmount) }}</button>
+    </view>
+  </view>
+</template>
+
+<script>
+import { get, post } from '@/common/request.js'
+import { money, weekdayText, toast } from '@/common/util.js'
+
+export default {
+  data() {
+    return {
+      orderNo: '',
+      order: null,
+      loading: true,
+      paying: false,
+      reviewScore: 5,
+      reviewContent: '',
+      submitting: false,
+      myReview: null
+    }
+  },
+  computed: {
+    statusTip() {
+      if (!this.order) return ''
+      switch (this.order.orderStatus) {
+        case 0:
+          return '请在 15 分钟内完成支付，超时系统会自动关闭并释放房间'
+        case 1:
+          return '支付成功，凭订单号到店办理入住即可'
+        case 2:
+          return '订单已取消，房间库存已释放'
+        case 3:
+          return '订单超时未支付，系统已自动关闭'
+        case 4:
+          return '已办理入住，退房时请到前台办理离店'
+        case 5:
+          return '已办理离店，欢迎再次光临，可对本次入住发表评价'
+        default:
+          return ''
+      }
+    }
+  },
+  onLoad(options) {
+    this.orderNo = options.orderNo || ''
+    this.load()
+  },
+  methods: {
+    money(v) {
+      return money(v)
+    },
+    weekday(date) {
+      return weekdayText(date)
+    },
+    load() {
+      if (!this.orderNo) {
+        this.loading = false
+        return
+      }
+      this.loading = true
+      get('/api/order/detail', { orderNo: this.orderNo })
+        .then((data) => {
+          this.order = data
+          if (data.orderStatus === 1 && data.reviewed) {
+            this.loadMyReview()
+          }
+        })
+        .catch((err) => toast(err.message))
+        .finally(() => {
+          this.loading = false
+        })
+    },
+    loadMyReview() {
+      get('/api/review/page', { roomTypeId: this.order.roomTypeId, pageNum: 1, pageSize: 50 })
+        .then((page) => {
+          const hit = (page.records || []).filter((r) => r.orderNo === this.orderNo)[0]
+          if (hit) {
+            this.myReview = hit
+            this.reviewScore = hit.score
+          }
+        })
+        .catch(() => {})
+    },
+    submitReview() {
+      if (this.submitting) return
+      this.submitting = true
+      post('/api/review/create', {
+        orderNo: this.orderNo,
+        score: this.reviewScore,
+        content: this.reviewContent.trim()
+      })
+        .then(() => {
+          toast('评价发布成功', 'success')
+          this.order.reviewed = true
+          this.loadMyReview()
+        })
+        .catch((err) => toast(err.message))
+        .finally(() => {
+          this.submitting = false
+        })
+    },
+    payOrder() {
+      if (this.paying) return
+      this.paying = true
+      post('/api/order/pay?orderNo=' + encodeURIComponent(this.orderNo))
+        .then(() => {
+          toast('支付成功', 'success')
+          this.load()
+        })
+        .catch((err) => toast(err.message))
+        .finally(() => {
+          this.paying = false
+        })
+    },
+    cancelOrder() {
+      uni.showModal({
+        title: '取消订单',
+        content: '取消后房间库存会立即释放，确定取消吗？',
+        success: (res) => {
+          if (!res.confirm) return
+          post('/api/order/cancel?orderNo=' + encodeURIComponent(this.orderNo))
+            .then(() => {
+              toast('已取消，库存已归还', 'success')
+              this.load()
+            })
+            .catch((err) => toast(err.message))
+        }
+      })
+    }
+  }
+}
+</script>
+
+<style scoped>
+.page {
+  padding: 24rpx;
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding-bottom: 200rpx;
+}
+
+.status-card {
+  background: linear-gradient(135deg, #6b4a30, #8b5e3c 60%, #a9793f);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  display: flex;
+  flex-direction: column;
+}
+.status-text {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #fff;
+}
+.status-sub {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.84);
+  line-height: 1.6;
+}
+
+.card {
+  margin-top: 24rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 12rpx 24rpx;
+  box-shadow: 0 6rpx 18rpx rgba(80, 60, 40, 0.06);
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid #f4efea;
+}
+.row:last-child {
+  border-bottom: none;
+}
+.label {
+  font-size: 26rpx;
+  color: #8a8078;
+}
+.value {
+  font-size: 26rpx;
+  color: #2f2a26;
+  max-width: 60%;
+  text-align: right;
+}
+.value.strong {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+.value.mono {
+  font-family: Consolas, monospace;
+  font-size: 24rpx;
+  color: #6b6259;
+}
+.value.amount {
+  color: #c47a3c;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+.row.total {
+  border-top: 2rpx dashed #ece5db;
+}
+
+.loading {
+  text-align: center;
+  color: #8a8078;
+  font-size: 26rpx;
+  padding: 80rpx 0;
+}
+
+.footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -6rpx 20rpx rgba(80, 60, 40, 0.08);
+  display: flex;
+  align-items: center;
+}
+.btn {
+  flex: 1;
+  margin: 0 0 0 16rpx;
+  height: 84rpx;
+  line-height: 84rpx;
+  font-size: 28rpx;
+  border-radius: 42rpx;
+}
+.btn:first-child {
+  margin-left: 0;
+}
+.btn::after {
+  border: none;
+}
+.btn.primary {
+  flex: 2;
+  background: #8b5e3c;
+  color: #fff;
+}
+.btn.ghost {
+  background: #fff;
+  color: #8b5e3c;
+  border: 2rpx solid #dcc9b2;
+}
+
+/* 评价 */
+.review-card {
+  padding-bottom: 24rpx;
+}
+.review-head {
+  padding: 20rpx 0 12rpx;
+  border-bottom: 2rpx solid #f4efea;
+}
+.review-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #2f2a26;
+}
+.review-sub {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #8a8078;
+}
+.stars {
+  display: flex;
+  margin-top: 20rpx;
+}
+.star {
+  font-size: 52rpx;
+  color: #d8cfc3;
+  margin-right: 12rpx;
+}
+.star.on {
+  color: #d99a2b;
+}
+.review-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 16rpx;
+  background: #faf7f2;
+  border: 2rpx solid #ece5db;
+  border-radius: 16rpx;
+  padding: 18rpx 20rpx;
+  font-size: 26rpx;
+  color: #2f2a26;
+  min-height: 140rpx;
+}
+.ph {
+  color: #b8aea4;
+}
+.btn.submit {
+  margin-top: 20rpx;
+  height: 76rpx;
+  line-height: 76rpx;
+  font-size: 28rpx;
+  border-radius: 38rpx;
+  background: #8b5e3c;
+  color: #fff;
+}
+.my-review {
+  margin-top: 16rpx;
+  background: #faf7f2;
+  border-radius: 14rpx;
+  padding: 18rpx 20rpx;
+  font-size: 26rpx;
+  color: #4a423b;
+  line-height: 1.7;
+}
+.review-time {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: #a8a09a;
+}
+.my-review.empty-tip {
+  color: #8a8078;
+}
+</style>
